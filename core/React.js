@@ -5,7 +5,8 @@ function createElement(type,props,...children) {
         props:{
             ...props,
             children:children.map(child=>{
-                return typeof child === "string" ? cereateNode(child) : child
+                // 增加判断类型
+                return typeof child !== "object" ? cereateNode(child) : child
             })
         }
         
@@ -29,6 +30,7 @@ function render(element,container) {
             children:[element]
         }
     }
+    root =  work
 
     // // 根据type创建
     // const dom = element.type === "text element" ? document.createTextNode("") : document.createElement(element.type)
@@ -50,6 +52,7 @@ function render(element,container) {
 // 2024.01.14
 
 // let index = 1;
+let root = null // 记录根节点
 let work = null;
 function workLoop(deadline) {
     // index++;
@@ -61,18 +64,44 @@ function workLoop(deadline) {
         ifSecond = deadline.timeRemaining() < 1 // 任务小组结束停止进程
     }
 
+    // 没有根节点创建根节点
+    if (!work && root) {
+        commitRoot()
+    }
+
     requestIdleCallback(workLoop)
 
 }
 
+function commitRoot() {
+    commitWork(root.child)
+    root = null
+}
+
+function commitWork(fiber) {
+    if (!fiber) {
+        return
+    }
+    // 是否有父级 有则返回父级，没有则一直找直到找到根部
+    let parent = fiber.parent
+    while (!parent.dom) {
+        parent = parent.parent
+    }
+    if (fiber.dom) {
+        parent.dom.append(fiber.dom)
+    }
+    commitWork(fiber.child)
+    commitWork(fiber.sibling)
+}
+
 function workList(work) {
-    
+    // 判断是否是function
     // 类同render
-    if (!work.dom) {
+    let if_function = typeof work.type === 'function'
+    if (!work.dom && !if_function) {
         // 根据type创建
         const dom = (work.dom = work.type === "text element" ? document.createTextNode("") : document.createElement(work.type))
-        work.parent.dom.append(dom)
-        
+       
         // 填充属性
         Object.keys(work.props).forEach(key => {
             if (key !== "children") {
@@ -80,10 +109,13 @@ function workList(work) {
             }
         })
     }
+
+    // 是function类型则提取function内部
+    let children  = if_function ? [work.type(work.props)]: work.props.children
     
     // 转换链表
     let prevChild = null;
-    work.props.children.forEach((child,index)=>{
+    children.forEach((child,index)=>{
         // 不破坏原有结构进行记录Parent
         const newWork = {
             type:child.type,
@@ -113,7 +145,15 @@ function workList(work) {
         return work.sibling
     }
 
-    return work.parent?.sibling
+    // 多个组件遍历
+    let nextWork = work
+    while (nextWork) {
+        if (nextWork.sibling) {
+            return nextWork.sibling
+        }
+
+        nextWork = nextWork.parent
+    }
 
 }
 
